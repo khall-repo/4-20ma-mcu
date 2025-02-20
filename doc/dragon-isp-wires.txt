@@ -1,0 +1,7 @@
+Dragon       ATTINY84
+1 MISO YEL   8
+2  VTG WHT   -
+3  SCK BLU   9
+4 MOSI ORG   7
+5  RST PUR   4
+6  GND GRY   14
