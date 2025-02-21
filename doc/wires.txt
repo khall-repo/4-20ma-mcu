@@ -1,0 +1,15 @@
+Dragon       ATTINY84
+1 MISO YEL   8
+2  VTG WHT   5V
+3  SCK BLU   9
+4 MOSI ORG   7
+5  RST PUR   4
+6  GND GRY   GND
+
+Serial port
+TTL-RS232
+Module       ATTINY84
+1 VCC RED    5V     
+2 RXD ORG    8/TX
+3 TXD -      Unused
+4 GND GRN    GND

@@ -9,7 +9,7 @@
 
 // LED is on pin 2, PB0
 #define LED      PB0
-#define DELAY_MS 500
+#define DELAY_MS 1000
 
 void init_debug_pins(void)
 {
@@ -51,8 +51,9 @@ int main ()
 {
 	uint8_t high = 0;
 	uint16_t ms = 0;
-	//char message[] = "1234\r\n";
-	char message[] = {0x55, 0, 0x55, 0, 0xaa, 0, 0xaa, 0};
+	//char message[] = "1234\r\n"; 
+	//char message[] = {0x55, 0, 0x55, 0, 0xaa, 0, 0xaa, 0};
+	char message[] = "Test\n";
   uint8_t len = sizeof(message)-1;
 	uint8_t i;
 

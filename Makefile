@@ -20,9 +20,12 @@ SRC_FILES := $(wildcard $(SRCDIR)/*.c)
 OBJ_FILES := $(patsubst $(SRCDIR)/%.c, $(OBJDIR)/%.o, $(SRC_FILES))
 
 all: $(HEXDIR)/$(TARGET).hex flash
+#all: $(HEXDIR)/$(TARGET).hex
 
-flash: fuse $(HEXDIR)/$(TARGET).hex
-	$(AVRDUDE) -U flash:w:$<:i
+#flash: fuse $(HEXDIR)/$(TARGET).hex
+flash: $(HEXDIR)/$(TARGET).hex
+	$(AVRDUDE) -U flash:w:$(HEXDIR)/$(TARGET).hex:i
+#	$(AVRDUDE) -U flash:w:$<:i
 
 fuse:
 	$(AVRDUDE) $(FUSES)

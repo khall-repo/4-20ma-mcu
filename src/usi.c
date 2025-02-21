@@ -71,7 +71,7 @@ static uint8_t reverse_byte (uint8_t x) {
 }
 void usiserial_send_byte(uint8_t data)
 {
-  DP0_ON;
+  //DP0_ON;
   while (usiserial_send_get_state() != AVAILABLE)
   {
     // Spin until we finish sending previous packet
@@ -84,7 +84,7 @@ void usiserial_send_byte(uint8_t data)
   GTCCR |= 1 << PSR10;                    // Reset prescaler
   OCR0A = FULL_BIT_TICKS;                 // Trigger every full bit width
   TCNT0 = 0;                              // Count up from 0
-  TIMSK0 = (1 << OCIE0A); // Enable Timer0 compare match interrupt
+  //TIMSK0 = (1 << OCIE0A); // Enable Timer0 compare match interrupt
 
   // Configure USI to send high start bit and 7 bits of data
   USIDR = 0x00 | usiserial_get_tx_data() >> 1;  // Start bit (low) followed by first 7 bits of serial data
@@ -94,43 +94,43 @@ void usiserial_send_byte(uint8_t data)
   DDRA  |= (1<<PA5);                            // Configure USI_DO as output.
   USISR = 1<<USIOIF |                           // Clear USI overflow interrupt flag
           (16 - 8);                             // and set USI counter to count 8 bits
-  DP0_OFF;
+  //DP0_OFF;
 }
 
-ISR(TIM0_COMPA_vect)
+/*ISR(TIM0_COMPA_vect)
 {
   DP4_ON;
   // Toggle USI clock
   USICR |= (1 << USITC);
   DP4_OFF;
-}
+}*/
 
 // USI overflow interrupt indicates we have sent a buffer
 ISR (USI_OVF_vect)
 {
-  DP1_ON;
+  //DP1_ON;
   if (usiserial_send_get_state() == FIRST)
   {
-    DP2_ON;
+    //DP2_ON;
     usiserial_send_set_state(SECOND);
     USIDR = usiserial_get_tx_data() << 7  // Send last 1 bit of data
         | 0x7F;                           // and stop bits (high)
     USISR = (1<<USIOIF) |                 // Clear USI overflow interrupt flag
       (16 - (1 + (STOPBITS)));            // Set USI counter to send last data bit and stop bits
-    DP2_OFF;
+    //DP2_OFF;
   }
   else
   {
-    DP3_ON;
+    //DP3_ON;
     PORTA |= 1 << PA5;              // Ensure output is high
     DDRA  |= (1<<PA5);              // Configure USI_DO as output.
     USICR = 0;                      // Disable USI.
     USISR |= (1<<USIOIF);             // clear interrupt flag
     usiserial_send_set_state(AVAILABLE);
-    TIMSK0 &= ~(1 << OCIE0A); // Disable Timer0 compare match interrupt
-    DP3_OFF;
+    //TIMSK0 &= ~(1 << OCIE0A); // Disable Timer0 compare match interrupt
+    //DP3_OFF;
   }
-  DP1_OFF;
+  //DP1_OFF;
 }
 
 
