@@ -4,17 +4,24 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-//enum USISERIAL_SEND_STATE { AVAILABLE, FIRST, SECOND };
-//enum USISERIAL_SEND_STATE usi_get_send_state(void);
-void usi_serial_init(void);
-bool usiserial_send_available();
-void usiserial_send_byte(uint8_t data);
+/**
+ * Initialize USIUART
+ */
+void usiuart_init(void);
 
+/**
+ * Gets next character
+ * @param dst Pointer to the destination
+ * @return False = No character, True = Next Character received
+ */
+bool usiuart_getChar(char *dst);
 
-/*uint8_t usi_uart_receive(void);
-uint8_t usi_uart_available(void);
-uint8_t usi_uart_read(void);
-void usi_uart_write(uint8_t data);
-void usi_uart_print(const char *str);*/
+/**
+ * Transmit a string.
+ * Interrupts every ongoing RX.
+ * @param string Null terminated string
+ * @return True = Success, False = currently Sending
+ */
+bool usiuart_printStr(char* string);
 
 #endif // USI_H

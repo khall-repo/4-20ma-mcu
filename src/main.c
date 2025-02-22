@@ -7,11 +7,11 @@
 #include "usi.h"
 #include "debug_pins.h"
 
-// LED is on pin 2, PB0
-#define LED      PB0
+// LED is on pin 13, PA0
+#define LED      PA0
 #define DELAY_MS 1000
 
-void init_debug_pins(void)
+/*void init_debug_pins(void)
 {
 	DP0_DDR_OUT;
 	DP1_DDR_OUT;
@@ -45,48 +45,36 @@ void init_debug_pins(void)
 	DP4_ON;
 	_delay_ms(5);
 	DP4_OFF;
-}
+}*/
 
 int main ()
 {
 	uint8_t high = 0;
-	uint16_t ms = 0;
-	//char message[] = "1234\r\n"; 
-	//char message[] = {0x55, 0, 0x55, 0, 0xaa, 0, 0xaa, 0};
 	char message[] = "Test\n";
-  uint8_t len = sizeof(message)-1;
-	uint8_t i;
 
-	init_debug_pins();
-
-	// setup LED pin for output in port B's direction register
-	DDRB |= (1 << LED);
+	// setup LED pin for output in port B's direction register 
+	DDRA |= (1 << LED);
 
 	// set LED pin LOW
-	PORTB &= ~(1 << LED);
+	PORTA &= ~(1 << LED);
 
+	usiuart_init();
 	sei();
-	//usi_serial_init();
 
 	while (1) {
 		high = !high;
 
 		if (high) {
 			// set LED pin HIGH
-			PORTB |= (1 << LED);
+			PORTA |= (1 << LED);
 		} else {
 			// set LED pin LOW
-			PORTB &= ~(1 << LED);
+			PORTA &= ~(1 << LED);
 		}
 
-		// delay for 500 ms
-		for (ms = DELAY_MS; ms > 0; ms -= 10) {
-			_delay_ms(10);
-		}
+	  _delay_ms(1000);
 
-		for (i = 0; i<len; i++) {
-			usiserial_send_byte(message[i]);
-    }
+		usiuart_printStr(message);
 
 	}
 

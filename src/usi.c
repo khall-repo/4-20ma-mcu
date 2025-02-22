@@ -1,165 +1,274 @@
-#include <avr/io.h>
-#include <avr/interrupt.h>
-#include <util/delay.h>
-#include "config.h"
+/*  Copyright (C) 2016  Florian Menne
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+
 #include "usi.h"
-#include "debug_pins.h"
-// Set your baud rate and number of stop bits here 
-#define BAUDRATE            9600
-#define STOPBITS            1
 
-// If bit width in cpu cycles is greater than 255 then  divide by 8 to fit in timer
-// Calculate prescaler setting
-#define CYCLES_PER_BIT       ( (F_CPU) / (BAUDRATE) )
-#if (CYCLES_PER_BIT > 255)
-#define DIVISOR             8
-#define CLOCKSELECT         2
-#else
-#define DIVISOR             1
-#define CLOCKSELECT         1
+#include <stdlib.h>
+#include <string.h>
+#include <avr/io.h>
+//#include <avr/iotn85.h>
+#include <avr/interrupt.h>
+
+#include "bit-reverse.h"
+
+#ifndef F_CPU
+#define F_CPU 1431818UL
+#warning USIUART.c: F_CPU not defined defaulting to 8000000 Hz
 #endif
-#define FULL_BIT_TICKS      ( (CYCLES_PER_BIT) / (DIVISOR) )
 
-// USISerial send state variable and accessors
-enum USISERIAL_SEND_STATE { AVAILABLE, FIRST, SECOND };
-static volatile enum USISERIAL_SEND_STATE usiserial_send_state = AVAILABLE;
+#ifndef TIMER_DIVIDER
+#define TIMER_DIVIDER 8
+#endif
 
-/*void usi_serial_init(void)
-{
-  // Configure Timer0
-  TCCR0A = 2<<WGM00;                      // CTC mode
-  TCCR0B = CLOCKSELECT;                   // Set prescaler to clk or clk /8
-  GTCCR |= 1 << PSR10;                    // Reset prescaler
-  OCR0A = FULL_BIT_TICKS;                 // Trigger every full bit width
-  TCNT0 = 0;                              // Count up from 0 
+#ifndef BAUD
+#define BAUD 57600
+#endif
 
-  USICR = (1<<USIOIE)|                     // Enable USI Counter OVF interrupt.
-          (0<<USIWM1)|(1<<USIWM0)|              // Select three wire mode to ensure USI written to PB1
-          (0<<USICS1)|(1<<USICS0)|(0<<USICLK);  // Select Timer0 Compare match as USI Clock source.
-  DDRA |= (1<<PA5);                        // Configure USI_DO as output.
-}*/
+#ifndef RXBUFFERSIZE
+#define RXBUFFERSIZE 8
+#endif
 
-static inline enum USISERIAL_SEND_STATE usiserial_send_get_state(void)
-{
-  return usiserial_send_state;
-}
-static inline void usiserial_send_set_state(enum USISERIAL_SEND_STATE state)
-{
-  usiserial_send_state=state;
-}
-bool usiserial_send_available()
-{
-  return usiserial_send_get_state()==AVAILABLE;
-}
+#if 255 < (F_CPU/TIMER_DIVIDER)/BAUD + ((F_CPU/TIMER_DIVIDER)/BAUD)/2
+#error USIUART.c: Required ticks overflows OCR0A, try increasing TIMER_DIVIDER
+#endif
 
-// Transmit data persistent between USI OVF interrupts
-static volatile uint8_t usiserial_tx_data;
-static inline uint8_t usiserial_get_tx_data(void)
-{
-  return usiserial_tx_data;
-}
-static inline void usiserial_set_tx_data(uint8_t tx_data)
-{
-  usiserial_tx_data = tx_data;
-}
+#define TIMER_TICK ((float) (F_CPU/TIMER_DIVIDER)/BAUD)
 
-static uint8_t reverse_byte (uint8_t x) {
-  x = ((x >> 1) & 0x55) | ((x << 1) & 0xaa);
-  x = ((x >> 2) & 0x33) | ((x << 2) & 0xcc);
-  x = ((x >> 4) & 0x0f) | ((x << 4) & 0xf0);
-  return x;
-}
-void usiserial_send_byte(uint8_t data)
+enum
 {
-  //DP0_ON;
-  while (usiserial_send_get_state() != AVAILABLE)
-  {
-    // Spin until we finish sending previous packet
-  };
-  usiserial_send_set_state(FIRST);
-  usiserial_set_tx_data(reverse_byte(data));
-  // Configure Timer0
-  TCCR0A = (1 << WGM01);                      // CTC mode
-  TCCR0B = CLOCKSELECT;                   // Set prescaler to clk or clk /8
-  GTCCR |= 1 << PSR10;                    // Reset prescaler
-  OCR0A = FULL_BIT_TICKS;                 // Trigger every full bit width
-  TCNT0 = 0;                              // Count up from 0
-  //TIMSK0 = (1 << OCIE0A); // Enable Timer0 compare match interrupt
+	RX = 0,
+	TX,
+	NEXTCHAR,
+};
 
-  // Configure USI to send high start bit and 7 bits of data
-  USIDR = 0x00 | usiserial_get_tx_data() >> 1;  // Start bit (low) followed by first 7 bits of serial data
-  USICR  = (1<<USIOIE)|                         // Enable USI Counter OVF interrupt.
-           (0<<USIWM1)|(1<<USIWM0)|             // Select three wire mode to ensure USI written to PB1
-           (0<<USICS1)|(1<<USICS0)|(0<<USICLK); // Select Timer0 Compare match as USI Clock source.
-  DDRA  |= (1<<PA5);                            // Configure USI_DO as output.
-  USISR = 1<<USIOIF |                           // Clear USI overflow interrupt flag
-          (16 - 8);                             // and set USI counter to count 8 bits
-  //DP0_OFF;
+static uint8_t rxBuffer[RXBUFFERSIZE];
+static volatile uint8_t rxWriter = 0;
+static uint8_t rxReader = RXBUFFERSIZE-1;
+static volatile uint8_t state;
+static volatile uint8_t tempTxChar;
+static volatile char* currentChar;
+
+void usiuart_init()
+{
+	state = RX;
+
+  //PA6 as input
+	DDRA &= ~_BV(PA6);
+
+  //PA5 as output and high
+	DDRA |= _BV(PA5);
+	PORTA |= _BV(PA5);
+
+	/*
+	 * Set Timer settings
+	 */
+	TCCR0A |= _BV(WGM01);
+#if	TIMER_DIVIDER == 1
+	TCCR0B |= _BV(CS00);
+#elif TIMER_DIVIDER == 8
+	TCCR0B |= _BV(CS01);
+#elif TIMER_DIVIDER == 64
+	TCCR0B |= _BV(CS01) | _BV(CS00);
+#elif TIMER_DIVIDER == 256
+	TCCR0B |= _BV(CS02);
+#elif TIMER_DIVIDER == 1024
+	TCCR0B |= _BV(CS02) | _BV(CS00);
+#else
+#error USIUART.c: Unsupported timer divider
+#endif
+
+	/*
+	 * Enable PCINT0
+	 */
+	GIFR = _BV(PCIF0);
+	PCMSK0 |= _BV(PCINT6);
+	GIMSK |= _BV(PCIE0);
+
+	OCR0A = (uint8_t) TIMER_TICK + TIMER_TICK/2;
 }
 
-/*ISR(TIM0_COMPA_vect)
+bool usiuart_getChar(char *dst)
 {
-  DP4_ON;
-  // Toggle USI clock
-  USICR |= (1 << USITC);
-  DP4_OFF;
-}*/
+	uint8_t temp;
 
-// USI overflow interrupt indicates we have sent a buffer
-ISR (USI_OVF_vect)
-{
-  //DP1_ON;
-  if (usiserial_send_get_state() == FIRST)
-  {
-    //DP2_ON;
-    usiserial_send_set_state(SECOND);
-    USIDR = usiserial_get_tx_data() << 7  // Send last 1 bit of data
-        | 0x7F;                           // and stop bits (high)
-    USISR = (1<<USIOIF) |                 // Clear USI overflow interrupt flag
-      (16 - (1 + (STOPBITS)));            // Set USI counter to send last data bit and stop bits
-    //DP2_OFF;
-  }
-  else
-  {
-    //DP3_ON;
-    PORTA |= 1 << PA5;              // Ensure output is high
-    DDRA  |= (1<<PA5);              // Configure USI_DO as output.
-    USICR = 0;                      // Disable USI.
-    USISR |= (1<<USIOIF);             // clear interrupt flag
-    usiserial_send_set_state(AVAILABLE);
-    //TIMSK0 &= ~(1 << OCIE0A); // Disable Timer0 compare match interrupt
-    //DP3_OFF;
-  }
-  //DP1_OFF;
+	//Calculate next reader position
+	temp = (rxReader + 1) & (RXBUFFERSIZE-1);
+
+	//Return if no char available
+	if(temp == rxWriter) return false;
+
+	//Get data from buffer and bitswap
+	*dst = bitReverse(rxBuffer[temp]);
+
+	rxReader = temp;
+
+	return true;
 }
 
 
-
-/*ISR(USI_OVF_vect)
+bool usiuart_printStr(char* string)
 {
-  DP1_ON;
-  if (usiserial_send_get_state() == FIRST)
-  {
-    DP2_ON;
-    USIDR = usiserial_get_tx_data() << 7; // Send the last bit and stop bit
-    usiserial_send_set_state(SECOND);
-    DP2_OFF;
-  }
-  else if (usiserial_send_get_state() == SECOND)
-  {
-    DP3_ON;
-    usiserial_send_set_state(AVAILABLE);
-    TIMSK0 &= ~(1 << OCIE0A); // Disable Timer0 compare match interrupt
-    DP3_OFF;
-  }
-  USISR = (1 << USIOIF); // Clear USI overflow interrupt flag
-  DP1_OFF;
-}*/
+	/*
+	 * If RX is currently in progress don't care - bad luck...
+	 */
 
-/*ISR(TIM0_COMPA_vect)
+	if(state != RX) return false;
+
+	//Disable PCINT0 interrupt
+	PCMSK0 &= ~_BV(PCINT6);
+
+	//Disable TIM Interrupt
+	TIMSK0 = 0;
+
+	//Disable USI
+	USICR = 0;
+
+	state = TX;
+
+
+	currentChar = string;
+
+	tempTxChar = bitReverse(*currentChar++);
+
+	//Prefill with data and startbit
+	USIDR = tempTxChar>>1;
+
+	TCNT0 = 0;
+	OCR0A = (uint8_t) TIMER_TICK;
+
+	/*
+	 * USI settings
+	 */
+	USISR = _BV(USIOIF) | 14;
+	USICR = _BV(USICS0) | _BV(USIOIE) | _BV(USIWM0);
+
+	return true;
+}
+
+ISR(PCINT0_vect)
 {
-  // Toggle USI clock
-  USICR |= (1 << USITC);
-  OCR0A = FULL_BIT_TICKS;                 // Trigger every full bit width
-  TCNT0 = 0;                              // Count up from 0
-}*/
+	//Only react if Pin is low (startbit)
+	if( PINA & _BV(PA6) ) return;
+	PCMSK0 = 0;
+
+	TCNT0 = 0;
+	OCR0A = (uint8_t) TIMER_TICK + TIMER_TICK/2;
+
+	// Clear flag
+	TIFR0 = _BV(OCF0A);
+
+	//Enable OCIE0A
+	TIMSK0 = _BV(OCIE0A);
+
+
+	/*
+	 * USI settings
+	 */
+	USISR = _BV(USIOIF) | 8;
+	USICR |= _BV(USICS0) | _BV(USIOIE);
+
+}
+
+ISR(TIM0_COMPA_vect)
+{
+	OCR0A = (uint8_t) TIMER_TICK;
+	TIMSK0 = 0;
+}
+
+ISR(USI_OVF_vect)
+{
+	uint8_t temp;
+	uint8_t data;
+
+	/*
+	 * Handle RX
+	 */
+	if(state == RX)
+	{
+		USICR = 0;
+		data = USIDR;
+		//Calculate next position
+		temp = (rxWriter + 1) & (RXBUFFERSIZE-1);
+
+		//Check if next position collides with reader
+		if(temp != rxReader)
+		{
+			//Write to rxBuffer
+			rxBuffer[rxWriter] = data;
+		}
+
+		//Set rxWriter to next position
+		rxWriter = temp;
+
+		PCMSK0 |= _BV(PCINT6);
+	}
+
+	/*
+	 * Handle TX
+	 */
+	else if(state == TX)
+	{
+		USIDR = (tempTxChar<<1) | _BV(0);
+
+		USISR = _BV(USIOIF) | 8;
+		USICR = _BV(USICS0) | _BV(USIOIE) | _BV(USIWM0);
+		state = NEXTCHAR;
+	}
+
+	/*
+	 * Handle NEXTCHAR
+	 */
+	else if (state == NEXTCHAR)
+	{
+		/*
+		 * Check for next character
+		 */
+		if(*currentChar)
+		{
+			//Get next character
+			tempTxChar = bitReverse(*currentChar++);
+
+			//Prefill with data and startbit
+			USIDR = tempTxChar>>1;
+
+			TCNT0 = 0;
+			state = TX;
+
+			/*
+			 * USI settings
+			 */
+			USISR = _BV(USIOIF) | 14;
+			return;
+		}
+
+		/*
+		 * Reenable RX
+		 */
+
+		//Disable USI
+		USICR = 0;
+
+		//Change to RX state
+		state = RX;
+
+		//Clear Pin change interrupt flag
+		GIFR |= _BV(PCIF0);
+
+		//Reenable interrupt on PCINT6
+		PCMSK0 |= _BV(PCINT6);
+	}
+}
