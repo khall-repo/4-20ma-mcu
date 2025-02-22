@@ -27,4 +27,6 @@
 #define DP3_OFF (PORTA &= ~(1 << DP3))
 #define DP4_OFF (PORTA &= ~(1 << DP4))
 
+void init_debug_pins(void);
+
 #endif // DEBUG_PINS_H

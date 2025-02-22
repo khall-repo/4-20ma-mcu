@@ -1,82 +1,59 @@
+/**
+ * @file main.c
+ * @brief Main file for the ATtiny85 4-20mA MCU project
+ * @par Copyright (c) 2025 Keith Hall
+ */
 #include <avr/io.h>
 #include <avr/interrupt.h>
-// F_CPU frequency to be defined at command line
 #include <util/delay.h>
+#include <stdio.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include "config.h"
 #include "usi.h"
+#include "pwm.h"
+#include "adc.h"
 #include "debug_pins.h"
 
-// LED is on pin 13, PA0
-#define LED      PA0
+// LED is on pin 12, PA1
+#define LED      PA1
 #define DELAY_MS 1000
-
-/*void init_debug_pins(void)
-{
-	DP0_DDR_OUT;
-	DP1_DDR_OUT;
-	DP2_DDR_OUT;
-	DP3_DDR_OUT;
-	DP4_DDR_OUT;
-
-  // test pins 
-	DP0_OFF;
-	DP1_OFF;
-	DP2_OFF;
-	DP3_OFF;
-	DP4_OFF;
-
-  DP0_ON;
-	_delay_ms(5);
-	DP0_OFF;
-
-  DP1_ON;
-	_delay_ms(5);
-	DP1_OFF;
-
-	DP2_ON;
-	_delay_ms(5);
-	DP2_OFF;
-
-	DP3_ON;
-	_delay_ms(5);
-	DP3_OFF;
-
-	DP4_ON;
-	_delay_ms(5);
-	DP4_OFF;
-}*/
 
 int main ()
 {
-	uint8_t high = 0;
-	char message[] = "Test\n";
+  uint16_t adc_val = 0;
+	bool one_sec_toggle = 0;
+  char msg_buf[32] = {0};
 
 	// setup LED pin for output in port B's direction register 
 	DDRA |= (1 << LED);
-
 	// set LED pin LOW
 	PORTA &= ~(1 << LED);
 
-	usiuart_init();
+	init_usi_uart();
+  init_pwm();
+  init_adc();
 	sei();
 
 	while (1) {
-		high = !high;
+    one_sec_toggle ^= 1;
 
-		if (high) {
-			// set LED pin HIGH
-			PORTA |= (1 << LED);
-		} else {
-			// set LED pin LOW
-			PORTA &= ~(1 << LED);
-		}
+    // toggle the I'm alive LED
+    if (one_sec_toggle) {
+      // set LED pin HIGH
+      PORTA |= (1 << LED);
+    } else {
+      // set LED pin LOW
+      PORTA &= ~(1 << LED);
+    }
 
-	  _delay_ms(1000);
+    adc_val = read_adc();
+    set_pwm(adc_val);
+    sprintf(msg_buf, "ADC: %d\n", adc_val);
+    usiuart_print_str(msg_buf);
 
-		usiuart_printStr(message);
-
-	}
+    _delay_ms(1000);
+}
 
 	return 0;
 }

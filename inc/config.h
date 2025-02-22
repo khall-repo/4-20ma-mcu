@@ -1,6 +1,6 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-//#define F_CPU 8000000UL
+#define VREF 5000
 
 #endif // CONFIG_H

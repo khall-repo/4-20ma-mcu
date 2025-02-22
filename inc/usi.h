@@ -7,14 +7,14 @@
 /**
  * Initialize USIUART
  */
-void usiuart_init(void);
+void init_usi_uart(void);
 
 /**
  * Gets next character
  * @param dst Pointer to the destination
  * @return False = No character, True = Next Character received
  */
-bool usiuart_getChar(char *dst);
+//bool usiuart_getChar(char *dst);
 
 /**
  * Transmit a string.
@@ -22,6 +22,6 @@ bool usiuart_getChar(char *dst);
  * @param string Null terminated string
  * @return True = Success, False = currently Sending
  */
-bool usiuart_printStr(char* string);
+bool usiuart_print_str(char* string);
 
 #endif // USI_H
