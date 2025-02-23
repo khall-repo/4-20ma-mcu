@@ -1,0 +1,46 @@
+In one terminal, start the simulator:
+simavr -g -m attiny84a ./hex/main.elf
+
+In another terminal, start gdb:
+avr-gdb ./hex/main.elf
+
+Inside gdb, connect to the simulator:
+(gdb) target remote localhost:1234
+
+Optionally, in gdb, enable the gdb Terminal User Interface
+(gdb) tui enable
+
+In TUI mode use:
+Ctrl-X 2: to change view type.
+Ctrl-X o: to change the active window.
+
+Step through the code:
+(gdb) step
+
+Print registers, memory, etc.:
+(gdb) print $r16
+(gdb) print PORTB
+(gdb) x /32xb 0x100
+
+Change a value in a register:
+(gdb) print $r16=7
+
+
+Set a break point at "loop":
+(gdb) break loop
+
+
+Continue until the next breakpoint:
+(gdb) continue
+
+
+End execution:
+(gdb) interrupt   (or Ctrl-C)
+
+
+Exit the debugger:
+(gdb) quit
+
+
+Back in the simulator terminal, stop the simulator:
+$ Ctrl-C
