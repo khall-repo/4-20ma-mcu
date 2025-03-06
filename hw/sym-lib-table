@@ -1,4 +1,6 @@
 (sym_lib_table
   (version 7)
   (lib (name "lib-030525")(type "KiCad")(uri "${KIPRJMOD}/lib-030525.kicad_sym")(options "")(descr ""))
+  (lib (name "term-block-1146380000")(type "KiCad")(uri "${KIPRJMOD}/term-block-1146380000.kicad_sym")(options "")(descr ""))
+  (lib (name "tvs-diode")(type "KiCad")(uri "${KIPRJMOD}/tvs-diode.kicad_sym")(options "")(descr ""))
 )
